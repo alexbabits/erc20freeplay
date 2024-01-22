@@ -1,66 +1,32 @@
-## Foundry
+## Notes
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+This is kind of like if someone pays you, but it goes directly into your 401K or whatever so it doesn't count as your income? Kind of in that sphere of idea? Thoughts? I'll of course talk with people knowledgeable in tax law, but perhaps it is promising to think that this is properly deferring funds.
 
-Foundry consists of:
+Because for example, say Alice sends bob 100 tokens. Alice now has 0 tokens, and Bob has 100 in his pending balance, and 0 in his real spendable balance. This means those 100 tokens are inert and he cannot be used. He may pseudo-own them, but they aren't "activated". It's like someone giving you a pre-paid visa giftcard, but if you don't activate it, do you own the funds yet? I suppose it depends, or if there are any tax precedents for things like that? 
 
--   **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
--   **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
--   **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
--   **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+1. Set time for how long you want your pending coins to be locked, default to 0 seconds.
+2. Set boolean if you want to auto claim or not (Defaults to auto claim).
 
-## Documentation
+If you have any pending tokens, you cannot change your time lock amount or boolean perhaps?
+Or at least any future funds that come in, will be subject to the new time?
 
-https://book.getfoundry.sh/
+ERC20Deferred: May need a 712 signature pattern for Bob to call the functions? How does that work?
 
-## Usage
 
-### Build
+mapping from address --> uint256 claimTime
 
-```shell
-$ forge build
-```
+Contribute here as an ERC20 extension: https://github.com/OpenZeppelin/openzeppelin-contracts/tree/master/contracts/token/ERC20/extensions
 
-### Test
-
-```shell
-$ forge test
-```
-
-### Format
-
-```shell
-$ forge fmt
-```
-
-### Gas Snapshots
-
-```shell
-$ forge snapshot
-```
-
-### Anvil
-
-```shell
-$ anvil
-```
 
 ### Deploy
+`forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>`
 
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
 
-### Cast
 
-```shell
-$ cast <subcommand>
-```
 
-### Help
 
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
+
+
+1. Write Deploy Script
+2. Write Tests
+3. Include set time? Max time? Minimum time?
