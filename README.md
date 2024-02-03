@@ -1,32 +1,29 @@
-## Notes
+## Setup
+`forge install OpenZeppelin/openzeppelin-contracts`
 
-This is kind of like if someone pays you, but it goes directly into your 401K or whatever so it doesn't count as your income? Kind of in that sphere of idea? Thoughts? I'll of course talk with people knowledgeable in tax law, but perhaps it is promising to think that this is properly deferring funds.
-
-Because for example, say Alice sends bob 100 tokens. Alice now has 0 tokens, and Bob has 100 in his pending balance, and 0 in his real spendable balance. This means those 100 tokens are inert and he cannot be used. He may pseudo-own them, but they aren't "activated". It's like someone giving you a pre-paid visa giftcard, but if you don't activate it, do you own the funds yet? I suppose it depends, or if there are any tax precedents for things like that? 
-
-1. Set time for how long you want your pending coins to be locked, default to 0 seconds.
-2. Set boolean if you want to auto claim or not (Defaults to auto claim).
-
-If you have any pending tokens, you cannot change your time lock amount or boolean perhaps?
-Or at least any future funds that come in, will be subject to the new time?
-
-ERC20Deferred: May need a 712 signature pattern for Bob to call the functions? How does that work?
+## Local Deploy with Script
+1. `anvil` (Starts local node)
+2. Open another terminal and run `export PRIVATE_KEY="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"` (It's associated address: `0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266`). This is the local nodes default (first) private-public key pair.
+3. deploy: `forge script script/Deploy.s.sol --rpc-url http://localhost:8545 --private-key $PRIVATE_KEY --broadcast`
+4. Console displays deployed address for `DeferredTokenExample`: `0x5FbDB2315678afecb367f032d93F642f64180aa3`
 
 
-mapping from address --> uint256 claimTime
-
-Contribute here as an ERC20 extension: https://github.com/OpenZeppelin/openzeppelin-contracts/tree/master/contracts/token/ERC20/extensions
-
-
-### Deploy
-`forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>`
-
+## Local Interactions after Deployment
+Good variables to have:
+1. `export ADMIN="0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"`
+2. `export TOKEN="0x5FbDB2315678afecb367f032d93F642f64180aa3"` // token contract address.
+3. `export ALICE="0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"`
+4. `export BOB="0x976EA74026E726554dB657fA54763abd0C3a0aa9"`
 
 
-
-
-
-
-1. Write Deploy Script
-2. Write Tests
-3. Include set time? Max time? Minimum time?
+## Brief Testing
+1. Check balance of Admin, should be 1e27: `cast call $TOKEN "balanceOf(address)(uint256)" $ADMIN`
+2. Alice turns on manual claim: `cast send $TOKEN --unlocked --from $ALICE "toggleClaimStatus()"`
+3. Transfer tokens from Admin to Alice (Either syntax works):
+    - `cast send $TOKEN --unlocked --from $ADMIN "transfer(address,uint256)(bool)" $ALICE 1000000000000000000000000`
+    - `cast send $TOKEN --from $ADMIN "transfer(address,uint256)(bool)" $ALICE 1000000000000000000000000 --private-key $PRIVATE_KEY`
+4. Pending balance increases: `cast call $TOKEN "pendingBalanceOf(address)(uint256)" $ALICE`
+5. Normal balance still 0: `cast call $TOKEN "balanceOf(address)(uint256)" $ALICE`
+6. Claim pending tokens: `cast send $TOKEN --unlocked --from $ALICE "claimAll()"`
+7. Pending balance now 0: `cast call $TOKEN "pendingBalanceOf(address)(uint256)" $ALICE`
+8. Normal balance increases: `cast call $TOKEN "balanceOf(address)(uint256)" $ALICE`
