@@ -133,7 +133,7 @@ abstract contract ERC20Deferred is ERC20 {
         /*
         💡💡💡
         One potential solution to keep a constant total supply at all times during transfers, 
-        is to redirect the senders tokens to an intermediary inert vault instead of burning them.
+        is to redirect the senders tokens to a single global intermediary inert vault instead of burning them.
         When user claims their pending balance, the amount would be then be burned from the vault and minted to user. 
         This would also further distance (if that's even possible) the pending funds apart from the user.
         There's probably some way to do this, but may be overkill for an ERC20 extension, or it may be a superior option❓
