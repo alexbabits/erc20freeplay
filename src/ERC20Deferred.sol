@@ -48,8 +48,8 @@ abstract contract ERC20Deferred is ERC20 {
     error InsufficientPendingFunds(uint256 requestedClaimAmount, uint256 pendingBalance);
 
     event Claim(address indexed claimer, uint256 indexed amountClaimed);
-    event ToggledClaimStatus(address indexed user, uint8 indexed claimStatus);
-    event PendingBalanceUpdated(address indexed from, address indexed to, uint256 value);
+    event ToggledClaimStatus(address indexed user, uint8 indexed oldStatus, uint8 indexed newStatus);
+    event PendingBalanceUpdated(address indexed from, address indexed to, uint256 indexed value);
 
     /**
     * @dev Allows user to toggle their claim status.
@@ -58,15 +58,18 @@ abstract contract ERC20Deferred is ERC20 {
     * @dev they must claim them via `claimAll()` or `claimSpecificAmount()` to credit their `_balances` mapping.
     */
     function toggleClaimStatus() external {
-        uint8 userStatus = _manualClaim[msg.sender];
+        uint8 oldStatus = _manualClaim[msg.sender];
+        uint8 newStatus;
 
-        if (userStatus == UNINITIALIZED) {
-            _manualClaim[msg.sender] = ON;
+        if (oldStatus == UNINITIALIZED) {
+            newStatus = ON;
         } else {
-            _manualClaim[msg.sender] = userStatus == ON ? OFF : ON;
+            newStatus = oldStatus == ON ? OFF : ON;
         }
 
-        emit ToggledClaimStatus(msg.sender, userStatus);
+        _manualClaim[msg.sender] = newStatus;
+
+        emit ToggledClaimStatus(msg.sender, oldStatus, newStatus);
     }
 
     /**
