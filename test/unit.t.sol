@@ -5,8 +5,8 @@ import {Test, console2} from "forge-std/Test.sol";
 import {console} from "forge-std/Test.sol";
 import {StdCheats} from "forge-std/StdCheats.sol";
 
-import {MockFreePlayToken} from "../src/MockFreePlayToken.sol";
-import {MockEscrow} from "../src/MockEscrow.sol";
+import {ERC20FreePlay} from "../src/ERC20FreePlay.sol";
+import {Escrow} from "../src/Escrow.sol";
 import {Loot} from "../src/Loot.sol";
 /*
 contract FreePlayTokenTest is Test {

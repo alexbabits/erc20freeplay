@@ -1,6 +1,6 @@
 ## Setup
 `forge install OpenZeppelin/openzeppelin-contracts`
-`forge install smartcontractkit/chainlink`
+`forge install smartcontractkit/chainlink`, remapping required in foundry.toml
 
 ## Local Deploy with Script
 1. `anvil` (Starts local node)
