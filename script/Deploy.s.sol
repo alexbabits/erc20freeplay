@@ -14,23 +14,21 @@ contract Deploy is Script {
         uint256 initialSupply = 1e27; 
         address owner = msg.sender;
         uint64 subscriptionId = 9745; // chainlink subscription ID
-        uint256 keeperFee = 100; // 1%
-        uint256 penaltyFee = 5000; // 50%
-        // Deploy contracts
+
         Escrow escrow = new Escrow(owner);
         Loot loot = new Loot(owner);
-        ERC20FreePlay erc20freePlay = new ERC20FreePlay(owner, subscriptionId, initialSupply, address(escrow), address(loot), keeperFee, penaltyFee);
+        ERC20FreePlay erc20FreePlay = new ERC20FreePlay(owner, subscriptionId, initialSupply, address(escrow), address(loot));
         console.log("Deployed Escrow.sol at address: ", address(escrow));
         console.log("Deployed Loot.sol at address: ", address(loot));
-        console.log("Deployed ERC20FreePlay.sol at address: ", address(erc20freePlay));
+        console.log("Deployed ERC20FreePlay.sol at address: ", address(erc20FreePlay));
 
         /**
          * Call post-deployment setters to set and associate addresses properly.
          * This had to be done because we had a circular references between the contracts. Each contract needed eachothers addresses.
          */
-        escrow.setFreePlayTokenAddress(address(erc20freePlay));
+        escrow.setFreePlayTokenAddress(address(erc20FreePlay));
         escrow.setLootAddress(address(loot));
-        loot.setFreePlayTokenAddress(address(erc20freePlay));
+        loot.setFreePlayTokenAddress(address(erc20FreePlay));
 
         vm.stopBroadcast();
     }
