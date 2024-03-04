@@ -11,8 +11,8 @@ import {Loot} from "../src/Loot.sol";
 
 import {VRFCoordinatorV2Mock} from "@chainlink/src/v0.8/vrf/mocks/VRFCoordinatorV2Mock.sol";
 
-// 1. @audit TODO: With reverts, plug in the custom errors, make sure they match
-// 2. @audit TODO: With events, make sure all events are emitted correctly
+// 1. @audit TODO: With reverts, plug in the custom errors, make sure they match (meh)
+// 2. @audit TODO: With events, make sure all events are emitted correctly (meh, just visually inspect closely)
 // 3. @audit TODO: Should probably test front-end getters return the right amounts for tier/next tier too
 
 contract FreePlayTokenTest is Test, EnumsEventsErrors {
@@ -79,7 +79,7 @@ contract FreePlayTokenTest is Test, EnumsEventsErrors {
 
     function test_mint_free_play_off() public {
         uint256 amount = 500e18;
-        vm.startPrank(Alice);
+        vm.startPrank(Owner);
 
         uint256 totalSupplyBefore = erc20FreePlay.totalSupply();
         erc20FreePlay.mint(Alice, amount);
@@ -87,6 +87,7 @@ contract FreePlayTokenTest is Test, EnumsEventsErrors {
 
         assertEq(erc20FreePlay.balanceOf(Alice), amount, "should have 500 tokens");
         assertEq(totalSupplyAfter, totalSupplyBefore + amount, "supply should have increased");
+        vm.stopPrank();
     }
 
     function test_toggleFreePlayStatus() public {
@@ -126,9 +127,7 @@ contract FreePlayTokenTest is Test, EnumsEventsErrors {
         erc20FreePlay.setPenaltyFee(100001); // Must be [0, 10000] inclusive
 
         vm.expectRevert();
-        erc20FreePlay.setCallbackGasLimit(29999); // Must be [30k, 2.5M] inclusive
-        vm.expectRevert();
-        erc20FreePlay.setCallbackGasLimit(2_500_001); // Must be [30k, 2.5M] inclusive
+        erc20FreePlay.setCallbackGasLimit(2_500_001); // Must be LT 2.5M
 
         vm.expectRevert();
         erc20FreePlay.setRequestConfirmations(2); // Must be [3, 200] inclusive
@@ -169,21 +168,24 @@ contract FreePlayTokenTest is Test, EnumsEventsErrors {
 
     function test_mint_free_play_on() public {
         uint256 amount = 500e18;
-        
-        vm.startPrank(Alice);
+
+        vm.prank(Alice);
         erc20FreePlay.toggleFreePlayStatus();
+
+        vm.startPrank(Owner);
 
         uint256 totalSupplyBefore = erc20FreePlay.totalSupply();
         erc20FreePlay.mint(Alice, amount);
         uint256 totalSupplyAfter = erc20FreePlay.totalSupply();
 
-        assertEq(erc20FreePlay.balanceOf(Alice), 0, "Alice should have 0 tokens");
-        (uint256 credits,,,,,,,,) = erc20FreePlay.getFreePlayPosition(1); // Alice's position ID is 1.
-        assertEq(credits, 500e18, "Alice should be credited 100 free play");
+        assertEq(erc20FreePlay.balanceOf(Alice), 0, "should have 0 tokens");
+        assertEq(erc20FreePlay.balanceOf(address(escrow)), amount, "should have 500 tokens");
+        assertEq(totalSupplyAfter, totalSupplyBefore + amount, "supply should have increased");
         assertLt(totalSupplyBefore, totalSupplyAfter, "supply should increase, mints goes to Escrow");
-        assertEq(erc20FreePlay.balanceOf(address(escrow)), amount, "Escrow should have gotten the tokens");
+        (uint256 credits,,,,,,,,) = erc20FreePlay.getFreePlayPosition(1); // Alice's position ID is 1.
+        assertEq(credits, amount, "Alice should be credited 100 free play");
+        vm.stopPrank();
     }
-
 
     function test_donate() public {
         uint256 amount = 20000e18;

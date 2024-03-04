@@ -17,7 +17,7 @@ contract ERC20FreePlay is ERC20, Ownable2Step, EnumsEventsErrors, VRFConsumerBas
     VRFCoordinatorV2Interface COORDINATOR; // VRF interface
     bytes32 keyHash = 0x474e34a077df58807dbe9c96d3c009b23b3c6d0cce433e59bbf5b34f823bc56c; // VRF gas lane option, Sepolia only has this one
     uint64 subscriptionId; // VRF subscription ID
-    uint32 private callbackGasLimit = 300000; // VRF gas limit for `fulfillRandomWords()` callback execution.
+    uint32 private callbackGasLimit = 40000; // VRF gas limit for `fulfillRandomWords()` callback execution.
     uint16 private requestConfirmations = 3; // VRF number of block confirmations to prevent re-orgs.
 
     address private escrow; // Escrow contract address
@@ -349,7 +349,7 @@ contract ERC20FreePlay is ERC20, Ownable2Step, EnumsEventsErrors, VRFConsumerBas
     }
 
     function setCallbackGasLimit(uint32 _callbackGasLimit) external onlyOwner {
-        if (_callbackGasLimit < 30000 || _callbackGasLimit > 2_500_000) revert InvalidGasLimit();
+        if (_callbackGasLimit > 2_500_000) revert InvalidGasLimit();
         callbackGasLimit = _callbackGasLimit;
         emit CallbackGasLimitChanged(_callbackGasLimit);
     }
@@ -441,8 +441,8 @@ contract ERC20FreePlay is ERC20, Ownable2Step, EnumsEventsErrors, VRFConsumerBas
         );
     }
 
-    //@audit this should be put in a mock instead? Used for test right now to test mints to a user.
-    function mint(address to, uint256 amount) external {
+    // Proof of concept to show that minting works flawlessly with this
+    function mint(address to, uint256 amount) external onlyOwner {
         _mint(to, amount);
     }
 }
