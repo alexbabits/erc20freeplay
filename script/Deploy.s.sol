@@ -14,10 +14,10 @@ contract Deploy is Script {
         uint256 initialSupply = 1e27; 
         address owner = msg.sender;
         uint64 subscriptionId = 9745; // chainlink subscription ID
-
+        address vrfCoordinator = 0x8103B0A8A00be2DDC778e6e7eaa21791Cd364625; // VRF Sepolia coordinator address
         Escrow escrow = new Escrow(owner);
         Loot loot = new Loot(owner);
-        ERC20FreePlay erc20FreePlay = new ERC20FreePlay(owner, subscriptionId, initialSupply, address(escrow), address(loot));
+        ERC20FreePlay erc20FreePlay = new ERC20FreePlay(owner, subscriptionId, vrfCoordinator, initialSupply, address(escrow), address(loot));
         console.log("Deployed Escrow.sol at address: ", address(escrow));
         console.log("Deployed Loot.sol at address: ", address(loot));
         console.log("Deployed ERC20FreePlay.sol at address: ", address(erc20FreePlay));

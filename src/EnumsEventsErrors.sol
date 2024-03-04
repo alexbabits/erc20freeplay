@@ -35,7 +35,8 @@ abstract contract EnumsEventsErrors {
     error InvalidTier();
     error InvalidTimePeriod();
     error InvalidCustomFailureThreshold();
-    error PositionAlreadyMatured();
+    error PositionAlreadyMatured(uint64 unlocksAt, uint256 currentTime);
+    error PositionNotExpired(uint64 expiredAt, uint256 currentTime);
     error InvalidFee();
     error InvalidGasLimit();
     error InvalidRequestConfirmations();

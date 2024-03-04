@@ -15,7 +15,6 @@ contract ERC20FreePlay is ERC20, Ownable2Step, EnumsEventsErrors, VRFConsumerBas
     using SafeERC20 for IERC20;
 
     VRFCoordinatorV2Interface COORDINATOR; // VRF interface
-    address vrfCoordinator = 0x8103B0A8A00be2DDC778e6e7eaa21791Cd364625; // VRF Sepolia coordinator address
     bytes32 keyHash = 0x474e34a077df58807dbe9c96d3c009b23b3c6d0cce433e59bbf5b34f823bc56c; // VRF gas lane option, Sepolia only has this one
     uint64 subscriptionId; // VRF subscription ID
     uint32 private callbackGasLimit = 300000; // VRF gas limit for `fulfillRandomWords()` callback execution.
@@ -62,12 +61,12 @@ contract ERC20FreePlay is ERC20, Ownable2Step, EnumsEventsErrors, VRFConsumerBas
         uint16 failureThreshold; // Chance of survival of underlying tokens during a claim of free play credits.
     }
 
-    constructor(address owner, uint64 _subscriptionId, uint256 initialSupply, address _escrow, address _loot) 
+    constructor(address owner, uint64 _subscriptionId, address _vrfCoordinator, uint256 initialSupply, address _escrow, address _loot) 
         ERC20("theirsisgaylmao", "IRSGAY")
-        VRFConsumerBaseV2(vrfCoordinator)
+        VRFConsumerBaseV2(_vrfCoordinator)
         Ownable(owner)
     {
-        COORDINATOR = VRFCoordinatorV2Interface(vrfCoordinator);
+        COORDINATOR = VRFCoordinatorV2Interface(_vrfCoordinator);
         subscriptionId = _subscriptionId;
         _mint(owner, initialSupply);
         _setEscrow(_escrow);
@@ -133,24 +132,26 @@ contract ERC20FreePlay is ERC20, Ownable2Step, EnumsEventsErrors, VRFConsumerBas
         FreePlayPosition storage position = freePlayPosition[_positionId];
         UserInfo storage ownerInfo = userInfo[position.owner];
 
-        if (position.randomWord == 0 || position.claimStatus != State.CLAIM_IN_PROGRESS) revert InvalidPositionState(); 
+        if (position.claimStatus != State.CLAIM_IN_PROGRESS || position.randomWord == 0) revert InvalidPositionState(); 
 
         Tier userTier = position.claimTier;
+        address positionOwner = position.owner;
+        uint256 totalPositionCredits = position.credits;
 
         uint16 failureThreshold = (position.customFailureThreshold != 0) ? position.customFailureThreshold : globalTierInfo[userTier].failureThreshold;
         State result = (position.randomWord <= failureThreshold) ? State.SUCCESS : State.FAILURE;
         
-        ownerInfo.totalFreePlayCredits -= position.credits;
+        uint256 amountToKeeper = totalPositionCredits * keeperReward / PCT_DENOMINATOR;
+        uint256 amountToLoot = totalPositionCredits - amountToKeeper;
+
+        ownerInfo.totalFreePlayCredits -= totalPositionCredits;
         delete freePlayPosition[_positionId];
 
-        uint256 amountToKeeper = position.credits * keeperReward / PCT_DENOMINATOR;
-        uint256 amountToLoot = position.credits - amountToKeeper;
-
         result == State.SUCCESS 
-            ? _distributeTokensToOwner(position.owner, position.credits)
+            ? _distributeTokensToOwner(positionOwner, totalPositionCredits)
             : _distributeTokensToLootAndKeeper(isBatch, amountToLoot, amountToKeeper);
 
-        emit FinalizeClaim(position.owner, _positionId, result, position.credits, msg.sender);
+        emit FinalizeClaim(positionOwner, _positionId, result, totalPositionCredits, msg.sender);
     }
 
     function finalizeMultipleClaims(uint256[] calldata positionIds) external {
@@ -226,7 +227,7 @@ contract ERC20FreePlay is ERC20, Ownable2Step, EnumsEventsErrors, VRFConsumerBas
         UserInfo storage info = userInfo[position.owner];
         if (position.owner != msg.sender) revert NotOwnerOfPosition(msg.sender, position.owner);
         if (position.claimStatus == State.CLAIM_IN_PROGRESS) revert ClaimInProgress();
-        if (position.unlocksAt <= block.timestamp) revert PositionAlreadyMatured();
+        if (position.unlocksAt <= block.timestamp) revert PositionAlreadyMatured(position.unlocksAt, block.timestamp);
 
         uint256 penaltyAmount = position.credits * penaltyFee / PCT_DENOMINATOR;
         position.unlocksAt = uint64(block.timestamp); 
@@ -241,14 +242,16 @@ contract ERC20FreePlay is ERC20, Ownable2Step, EnumsEventsErrors, VRFConsumerBas
         FreePlayPosition storage position = freePlayPosition[_positionId];
         UserInfo storage ownerInfo = userInfo[position.owner];
         if (position.claimStatus == State.CLAIM_IN_PROGRESS) revert ClaimInProgress();
-        if (position.expiresAt < block.timestamp) {
-            uint256 amountToKeeper = position.credits * keeperReward / PCT_DENOMINATOR;
-            uint256 amountToLoot = position.credits - amountToKeeper;
-            ownerInfo.totalFreePlayCredits -= position.credits;
-            delete freePlayPosition[_positionId];
-            _distributeTokensToLootAndKeeper(isBatch, amountToKeeper, amountToLoot);
-        }
-        emit CleanedUpExpiredPosition(_positionId, position.owner, position.credits, msg.sender);
+        if (position.expiresAt >= block.timestamp) revert PositionNotExpired(position.expiresAt, block.timestamp);
+        address positionOwner = position.owner;
+        uint256 totalPositionCredits = position.credits;
+        uint256 amountToKeeper = totalPositionCredits * keeperReward / PCT_DENOMINATOR;
+        uint256 amountToLoot = totalPositionCredits - amountToKeeper;
+
+        ownerInfo.totalFreePlayCredits -= totalPositionCredits;
+        delete freePlayPosition[_positionId];
+        _distributeTokensToLootAndKeeper(isBatch, amountToLoot, amountToKeeper);
+        emit CleanedUpExpiredPosition(_positionId, positionOwner, totalPositionCredits, msg.sender);
     }
 
     function cleanUpMultipleExpiredPositions(uint256[] calldata positionIds) external {
@@ -346,7 +349,7 @@ contract ERC20FreePlay is ERC20, Ownable2Step, EnumsEventsErrors, VRFConsumerBas
     }
 
     function setCallbackGasLimit(uint32 _callbackGasLimit) external onlyOwner {
-        if (_callbackGasLimit < 30000) revert InvalidGasLimit(); //@audit see how much gas it costs, then give a nice buffer?
+        if (_callbackGasLimit < 30000 || _callbackGasLimit > 2_500_000) revert InvalidGasLimit();
         callbackGasLimit = _callbackGasLimit;
         emit CallbackGasLimitChanged(_callbackGasLimit);
     }
