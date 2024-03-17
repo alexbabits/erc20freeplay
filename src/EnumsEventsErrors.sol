@@ -15,6 +15,7 @@ abstract contract EnumsEventsErrors {
     event ExpirationSet(address indexed user, uint64 indexed expirationPeriod);
     event CustomFailureThresholdChanged(address indexed owner, uint256 indexed positionId, uint16 indexed newThreshold, uint16 oldThreshold);
     event EmergencyUnlock(address indexed owner, uint256 indexed id, uint256 indexed penaltyAmount);
+    event PositionFixed(address indexed owner, uint256 indexed id);
     event CleanedUpExpiredPosition(uint256 indexed id, address indexed owner, uint256 indexed amount, address caller);
     event FreePlayPositionCreated(address indexed owner, uint256 indexed id, uint256 indexed amount, Tier claimTier, uint64 unlocksAt, uint64 expiresAt);
     event KeeperRewardChanged(uint256 indexed newKeeperReward);

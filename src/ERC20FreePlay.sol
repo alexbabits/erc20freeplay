@@ -4,6 +4,7 @@ pragma solidity 0.8.20;
 import {Ownable, Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol"; 
 import {IERC20, SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol"; 
+import {ERC20Burnable} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 
 import {IEscrow} from "./IEscrow.sol";
 import {EnumsEventsErrors} from "./EnumsEventsErrors.sol";
@@ -11,7 +12,7 @@ import {EnumsEventsErrors} from "./EnumsEventsErrors.sol";
 import {VRFCoordinatorV2Interface} from "@chainlink/src/v0.8/vrf/interfaces/VRFCoordinatorV2Interface.sol";
 import {VRFConsumerBaseV2} from "@chainlink/src/v0.8/vrf/VRFConsumerBaseV2.sol";
 
-contract ERC20FreePlay is ERC20, Ownable2Step, EnumsEventsErrors, VRFConsumerBaseV2 {
+contract ERC20FreePlay is ERC20, ERC20Burnable, Ownable2Step, EnumsEventsErrors, VRFConsumerBaseV2 {
     using SafeERC20 for IERC20;
 
     VRFCoordinatorV2Interface COORDINATOR; // VRF interface
@@ -26,7 +27,9 @@ contract ERC20FreePlay is ERC20, Ownable2Step, EnumsEventsErrors, VRFConsumerBas
     uint256 private positionId; // global position ID counter
     uint256 private keeperReward = 100; // 1%
     uint256 private penaltyFee = 5000; // 50%
-    uint256 private immutable PCT_DENOMINATOR = 10000;
+    uint256 private immutable PCT_DENOMINATOR = 10000; // 100%
+
+    uint64 private immutable STUCK_POSITION_TIME_THRESHOLD = 93600; // 26 hours
 
     mapping(address => UserInfo) private userInfo; // Users "global" info
     mapping(uint256 => FreePlayPosition) private freePlayPosition; // Position ID --> Free play position
@@ -39,16 +42,17 @@ contract ERC20FreePlay is ERC20, Ownable2Step, EnumsEventsErrors, VRFConsumerBas
         uint256 credits; // free play credits. (This is also the amount of tokens re-directed to Escrow).
         uint256 requestId; // VRF requestId for the position
         address owner; // Owner of the position
+        uint64 requestedAt; // When `requestRandomWords()` was called for the position via `initiateClaim()`.
         uint64 unlocksAt; // When position unlocks and can be claimed. (based on user's set timelock period)
         uint64 expiresAt; // When position expires and underlying tokens are lost. (based on user's set expiration period)
         uint16 customFailureThreshold; // Incase user needs to have a custom decreased success rate for a position.
         uint16 randomWord; // random word for the position after a VRF request
-        State claimStatus; // whether there is a claim in progress or not for this particular position
+        State claimStatus; // whether there is a claim in progress for this particular position
         Tier claimTier; // Tier when the position was created.
     }
 
     struct UserInfo {
-        uint256 totalFreePlayCredits; // total free play credits, matured and unmatured.
+        uint256 totalFreePlayCredits; // total free play credits, matured, unmatured, and expired (until keeper bot cleans up position).
         uint256 amountDonated; // current total tokens donated from user
         uint64 timeLockPeriod; // timelock duration for all user's positions
         uint64 expirationPeriod; // expiration duration for all user's positions
@@ -87,7 +91,8 @@ contract ERC20FreePlay is ERC20, Ownable2Step, EnumsEventsErrors, VRFConsumerBas
         emit ToggledFreePlayStatus(msg.sender, oldStatus, newStatus);
     }
 
-    function initiateClaim(uint256 _positionId) public {
+    // `extraArgs` needed for Chainlink VRF v2.5
+    function initiateClaim(uint256 _positionId /*, bytes calldata extraArgs */) public {
         FreePlayPosition storage position = freePlayPosition[_positionId];
         UserInfo memory info = userInfo[position.owner];
         if (position.expiresAt < block.timestamp) {
@@ -105,10 +110,12 @@ contract ERC20FreePlay is ERC20, Ownable2Step, EnumsEventsErrors, VRFConsumerBas
             requestConfirmations,
             callbackGasLimit,
             1 // numWords
+            //`extraArgs` needed for v2.5
         );
 
         position.requestId = _requestId;
         position.claimStatus = State.CLAIM_IN_PROGRESS;
+        position.requestedAt = uint64(block.timestamp);
         requestIdToPositionId[_requestId] = _positionId;
 
         emit ClaimRequestInitiated(position.owner, _positionId, position.requestId);
@@ -238,6 +245,18 @@ contract ERC20FreePlay is ERC20, Ownable2Step, EnumsEventsErrors, VRFConsumerBas
         emit EmergencyUnlock(position.owner, _positionId, penaltyAmount);
     }
 
+    function fixFailedRequestPosition(uint256 _positionId) external {
+        FreePlayPosition storage position = freePlayPosition[_positionId];
+        if (position.owner != msg.sender) revert NotOwnerOfPosition(msg.sender, position.owner);
+        if (position.claimStatus != State.CLAIM_IN_PROGRESS || position.randomWord != 0) revert InvalidPositionState();
+        if (position.requestedAt + STUCK_POSITION_TIME_THRESHOLD > block.timestamp ) revert InvalidPositionState();
+
+        position.expiresAt = position.expiresAt == type(uint64).max ? position.expiresAt : position.expiresAt + STUCK_POSITION_TIME_THRESHOLD;
+        position.requestId = 0;
+        position.claimStatus = State.UNINITIALIZED;
+        emit PositionFixed(msg.sender, _positionId);
+    }
+
     function cleanUpExpiredPosition(uint256 _positionId, bool isBatch) public {
         FreePlayPosition storage position = freePlayPosition[_positionId];
         UserInfo storage ownerInfo = userInfo[position.owner];
@@ -323,6 +342,7 @@ contract ERC20FreePlay is ERC20, Ownable2Step, EnumsEventsErrors, VRFConsumerBas
             credits: value, 
             requestId: 0,
             owner: to,
+            requestedAt: 0,
             unlocksAt: uint64(block.timestamp) + info.timeLockPeriod,
             expiresAt: (info.expirationPeriod == 0) ? type(uint64).max : uint64(block.timestamp) + info.timeLockPeriod + info.expirationPeriod,
             customFailureThreshold: 0,
@@ -420,6 +440,7 @@ contract ERC20FreePlay is ERC20, Ownable2Step, EnumsEventsErrors, VRFConsumerBas
         uint256 credits,
         uint256 requestId,
         address owner,
+        uint64 requestedAt,
         uint64 unlocksAt,
         uint64 expiresAt,
         uint16 customFailureThreshold,
@@ -432,6 +453,7 @@ contract ERC20FreePlay is ERC20, Ownable2Step, EnumsEventsErrors, VRFConsumerBas
             position.credits,
             position.requestId,
             position.owner,
+            position.requestedAt,
             position.unlocksAt,
             position.expiresAt,
             position.customFailureThreshold,
@@ -442,7 +464,11 @@ contract ERC20FreePlay is ERC20, Ownable2Step, EnumsEventsErrors, VRFConsumerBas
     }
 
     // Proof of concept to show that minting works flawlessly with this
-    function mint(address to, uint256 amount) external onlyOwner {
+    // @audit should go in the implementation and not the abstract contract probably
+    // Should probably be `onlyMinter` from wizard.openzeppelin.com (Mintable, Roles) checked.
+    // and MINTER_ROLE should be the Exchange. (And maybe the owner to mock the staking yield contract).
+    // @audit I removed onlyOwner so everyone can mint for now.
+    function mint(address to, uint256 amount) external {
         _mint(to, amount);
     }
 }
