@@ -31,7 +31,3 @@ contract Exchange {
         emit Unwrap(msg.sender, amount);
     }
 }
-
-// Could also directly use ERC20Wrapper but unsure if this is what I need.
-// It would need to be inherited into the ERC20FreePlay `FPToken` implementation
-// https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/token/ERC20/extensions/ERC20Wrapper.sol

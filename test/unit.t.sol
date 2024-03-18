@@ -21,7 +21,7 @@ contract FreePlayTokenTest is Test, EnumsEventsErrors {
     ERC20Mock erc20Mock;
     VRFCoordinatorV2Mock coordinator;
 
-    address Owner;
+    address Owner = address(0x420691337);
     address Alice = address(0xA11CE);
     address Bob = address(0xB0B);
     address Charlie = address(0xC);
@@ -30,6 +30,14 @@ contract FreePlayTokenTest is Test, EnumsEventsErrors {
     uint256 initialSupply = 1e27; // 1 billion initial supply, 1e18 * 1e9.
     uint96 baseFee = 1e17; // 0.1 base LINK fee
     uint96 gasPriceLink = 1e9; // gas price
+
+    bytes32 keyHash = 0x474e34a077df58807dbe9c96d3c009b23b3c6d0cce433e59bbf5b34f823bc56c; // VRF gas lane option, Sepolia only has this one
+    uint32 callbackGasLimit = 40000; // VRF gas limit for `fulfillRandomWords()` callback execution.
+    uint16 private requestConfirmations = 3; // VRF number of block confirmations to prevent re-orgs.
+    uint256 _keeperReward = 100; // 1% (undercase just bc naming was the same with other test function declarations)
+    uint256 penaltyFee = 5000; // 50%
+    uint64 maxTimelockPeriod = 3650 days;
+    uint64 maxExpirationPeriod = 3650 days;
 
     function setUp() public {
         // Deploy mock VRF coordinator, setup and fund subscription
@@ -41,24 +49,93 @@ contract FreePlayTokenTest is Test, EnumsEventsErrors {
         Owner = address(this);
         escrow = new Escrow(Owner);
         loot = new Loot(Owner);
-        erc20FreePlay = new ERC20FreePlay(Owner, subscriptionId, address(coordinator), initialSupply, address(escrow), address(loot));
+        erc20FreePlay = new ERC20FreePlay(
+            Owner, 
+            initialSupply,
+            subscriptionId, 
+            keyHash,
+            callbackGasLimit,
+            requestConfirmations,
+            address(coordinator), 
+            address(escrow), 
+            address(loot)
+        );
 
-        // Deploy Mock ERC20 for testing wrapping/unwrapping with Exchange.sol
+        uint256[] memory requiredDonationAmounts = new uint256[](6);
+        requiredDonationAmounts[0] = 0;
+        requiredDonationAmounts[1] = 50e18;
+        requiredDonationAmounts[2] = 200e18;
+        requiredDonationAmounts[3] = 500e18;
+        requiredDonationAmounts[4] = 1000e18;
+        requiredDonationAmounts[5] = 5000e18;
+
+        uint16[] memory failureThresholds = new uint16[](6);
+        failureThresholds[0] = 9500;
+        failureThresholds[1] = 9800;
+        failureThresholds[2] = 9900;
+        failureThresholds[3] = 9950;
+        failureThresholds[4] = 9980;
+        failureThresholds[5] = 9990;
+
+        // Call part two of construction (fixes stack too deep from too many constructor args).
+        erc20FreePlay.constructorPartTwo(
+            _keeperReward, 
+            penaltyFee, 
+            maxTimelockPeriod, 
+            maxExpirationPeriod, 
+            requiredDonationAmounts, 
+            failureThresholds
+        );
+
+        // Deploy Mock ERC20 and Exchange for testing wrapping/unwrapping.
         erc20Mock = new ERC20Mock();
         exchange = new Exchange(address(erc20Mock), address(erc20FreePlay));
 
+        // Setters needed to associate addresses with eachother.
         escrow.setFreePlayTokenAddress(address(erc20FreePlay));
         escrow.setLootAddress(address(loot));
         escrow.renounceOwnership();
         loot.setFreePlayTokenAddress(address(erc20FreePlay));
 
-        // Add the consumer
+        // Add our free play token contract as the VRF consumooooor
         coordinator.addConsumer(subscriptionId, address(erc20FreePlay));
     }
 
     function test_deployment() public {
-        assertEq(erc20FreePlay.totalSupply(), initialSupply, "Incorrect total supply");
+        assertEq(erc20FreePlay.keeperReward(), _keeperReward, "should be set correctly upon deployment...");
+        assertEq(erc20FreePlay.penaltyFee(), penaltyFee, "...");
+        assertEq(erc20FreePlay.keyHash(), keyHash, "...");
+        assertEq(erc20FreePlay.callbackGasLimit(), callbackGasLimit, "...");
+        assertEq(erc20FreePlay.requestConfirmations(), requestConfirmations, "...");
+        assertEq(erc20FreePlay.subscriptionId(), 1, "..."); // Sub Id is just 1 in mock VRF
+        assertEq(erc20FreePlay.maxTimelockPeriod(), maxTimelockPeriod, "...");
+        assertEq(erc20FreePlay.maxExpirationPeriod(), maxExpirationPeriod, "...");
+        assertEq(erc20FreePlay.escrow(), address(escrow), "...");
+        assertEq(erc20FreePlay.loot(), address(loot), "...");
+        assertEq(erc20FreePlay.totalSupply(), initialSupply, "...");
         assertEq(erc20FreePlay.balanceOf(Owner), initialSupply, "Owner should have all tokens initially");
+
+        // judge me idc
+        (uint256 requiredDonationAmount0, uint16 failureThreshold0) = erc20FreePlay.getGlobalTierInfo(Tier(0));
+        (uint256 requiredDonationAmount1, uint16 failureThreshold1) = erc20FreePlay.getGlobalTierInfo(Tier(1));
+        (uint256 requiredDonationAmount2, uint16 failureThreshold2) = erc20FreePlay.getGlobalTierInfo(Tier(2));
+        (uint256 requiredDonationAmount3, uint16 failureThreshold3) = erc20FreePlay.getGlobalTierInfo(Tier(3));
+        (uint256 requiredDonationAmount4, uint16 failureThreshold4) = erc20FreePlay.getGlobalTierInfo(Tier(4));
+        (uint256 requiredDonationAmount5, uint16 failureThreshold5) = erc20FreePlay.getGlobalTierInfo(Tier(5));
+
+        assertEq(requiredDonationAmount0, 0, "Tier.One matches");
+        assertEq(requiredDonationAmount1, 50e18, "Tier.Two matches");
+        assertEq(requiredDonationAmount2, 200e18, "Tier.Three matches");
+        assertEq(requiredDonationAmount3, 500e18, "Tier.Four matches");
+        assertEq(requiredDonationAmount4, 1000e18, "Tier.Five matches");
+        assertEq(requiredDonationAmount5, 5000e18, "Tier.Six matches");
+
+        assertEq(failureThreshold0, 9500, "Tier.One matches");
+        assertEq(failureThreshold1, 9800, "Tier.Two matches");
+        assertEq(failureThreshold2, 9900, "Tier.Three matches");
+        assertEq(failureThreshold3, 9950, "Tier.Four matches");
+        assertEq(failureThreshold4, 9980, "Tier.Five matches");
+        assertEq(failureThreshold5, 9990, "Tier.Six matches");
     }
 
     function test_transfer_free_play_off() public {
@@ -121,20 +198,14 @@ contract FreePlayTokenTest is Test, EnumsEventsErrors {
     function test_setters() public {
         vm.startPrank(Owner);
 
-        erc20FreePlay.setKeeperReward(420);
-        erc20FreePlay.setPenaltyFee(6969);
         erc20FreePlay.setCallbackGasLimit(420000);
         erc20FreePlay.setRequestConfirmations(69); 
         erc20FreePlay.setSubscriptionId(9696);
 
         vm.expectRevert();
-        erc20FreePlay.setKeeperReward(10000); // Must be [0, 9999] inclusive
-        
+        erc20FreePlay.setCallbackGasLimit(2_500_001); // Must be [40k, 2.5M] inclusive
         vm.expectRevert();
-        erc20FreePlay.setPenaltyFee(100001); // Must be [0, 10000] inclusive
-
-        vm.expectRevert();
-        erc20FreePlay.setCallbackGasLimit(2_500_001); // Must be LT 2.5M
+        erc20FreePlay.setCallbackGasLimit(39999); // Must be [40k, 2.5M] inclusive
 
         vm.expectRevert();
         erc20FreePlay.setRequestConfirmations(2); // Must be [3, 200] inclusive

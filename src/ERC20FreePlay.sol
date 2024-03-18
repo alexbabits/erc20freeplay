@@ -16,27 +16,31 @@ contract ERC20FreePlay is ERC20, ERC20Burnable, Ownable2Step, EnumsEventsErrors,
     using SafeERC20 for IERC20;
 
     VRFCoordinatorV2Interface COORDINATOR; // VRF interface
-    bytes32 keyHash = 0x474e34a077df58807dbe9c96d3c009b23b3c6d0cce433e59bbf5b34f823bc56c; // VRF gas lane option, Sepolia only has this one
-    uint64 subscriptionId; // VRF subscription ID
-    uint32 private callbackGasLimit = 40000; // VRF gas limit for `fulfillRandomWords()` callback execution.
-    uint16 private requestConfirmations = 3; // VRF number of block confirmations to prevent re-orgs.
+    bytes32 public keyHash; // VRF gas lane option
+    uint64 public subscriptionId; // VRF subscription ID
+    uint32 public callbackGasLimit; // VRF gas limit for `fulfillRandomWords()` callback execution.
+    uint16 public requestConfirmations; // VRF number of block confirmations to prevent re-orgs.
 
-    address private escrow; // Escrow contract address
-    address private loot; // Loot contract address
+    address public escrow; // Escrow contract address
+    address public loot; // Loot contract address
 
-    uint256 private positionId; // global position ID counter
-    uint256 private keeperReward = 100; // 1%
-    uint256 private penaltyFee = 5000; // 50%
-    uint256 private immutable PCT_DENOMINATOR = 10000; // 100%
+    uint256 public positionId; // global position ID counter
+    uint256 public keeperReward;
+    uint256 public penaltyFee; 
+    uint64 public maxTimelockPeriod;
+    uint64 public maxExpirationPeriod;
 
-    uint64 private immutable STUCK_POSITION_TIME_THRESHOLD = 93600; // 26 hours
+    State public finishedDeploymentFlag;
 
-    mapping(address => UserInfo) private userInfo; // Users "global" info
-    mapping(uint256 => FreePlayPosition) private freePlayPosition; // Position ID --> Free play position
+    uint256 public immutable PCT_DENOMINATOR = 10000; // 100%
+    uint64 public immutable STUCK_POSITION_TIME_THRESHOLD = 93600; // 26 hours
+
+    mapping(address => UserInfo) public userInfo; // Users "global" info
+    mapping(uint256 => FreePlayPosition) public freePlayPosition; // Position ID --> Free play position
     mapping(Tier => GlobalTierInfo) public globalTierInfo; // Tier Enum --> Global tier info
 
-    mapping(address => State) private normalTransferFlag; // Flag to treat a transfer as normal, even if free play status is enabled
-    mapping(uint256 => uint256) private requestIdToPositionId; // Uses requestID to smuggle position ID into VRF callback `fulfillRandomWords()`
+    mapping(address => State) public normalTransferFlag; // Flag to treat a transfer as normal, even if free play status is enabled
+    mapping(uint256 => uint256) public requestIdToPositionId; // Uses requestID to smuggle position ID into VRF callback `fulfillRandomWords()`
 
     struct FreePlayPosition {
         uint256 credits; // free play credits. (This is also the amount of tokens re-directed to Escrow).
@@ -65,22 +69,47 @@ contract ERC20FreePlay is ERC20, ERC20Burnable, Ownable2Step, EnumsEventsErrors,
         uint16 failureThreshold; // Chance of survival of underlying tokens during a claim of free play credits.
     }
 
-    constructor(address owner, uint64 _subscriptionId, address _vrfCoordinator, uint256 initialSupply, address _escrow, address _loot) 
-        ERC20("theirsisgaylmao", "IRSGAY")
+    constructor(
+        address owner, 
+        uint256 initialSupply,
+        uint64 _subscriptionId, 
+        bytes32 _keyHash,
+        uint32 _callbackGasLimit,
+        uint16 _requestConfirmations,
+        address _vrfCoordinator, 
+        address _escrow, 
+        address _loot
+    ) 
+        ERC20("testcoin", "COIN")
         VRFConsumerBaseV2(_vrfCoordinator)
         Ownable(owner)
     {
+        setSubscriptionId(_subscriptionId);
+        setKeyHash(_keyHash);
+        setCallbackGasLimit(_callbackGasLimit);
+        setRequestConfirmations(_requestConfirmations);
         COORDINATOR = VRFCoordinatorV2Interface(_vrfCoordinator);
-        subscriptionId = _subscriptionId;
-        _mint(owner, initialSupply);
         _setEscrow(_escrow);
         _setLoot(_loot);
-        globalTierInfo[Tier.ONE] = GlobalTierInfo(0, 9500);
-        globalTierInfo[Tier.TWO] = GlobalTierInfo(50e18, 9800);
-        globalTierInfo[Tier.THREE] = GlobalTierInfo(200e18, 9900);
-        globalTierInfo[Tier.FOUR] = GlobalTierInfo(500e18, 9950);
-        globalTierInfo[Tier.FIVE] = GlobalTierInfo(1000e18, 9980);
-        globalTierInfo[Tier.SIX] = GlobalTierInfo(5000e18, 9990);
+        _mint(owner, initialSupply);
+    }
+
+    function constructorPartTwo(
+        uint256 _keeperReward, 
+        uint256 _penaltyFee, 
+        uint64 _maxTimelockPeriod, 
+        uint64 _maxExpirationPeriod,
+        uint256[] memory requiredDonationAmounts,
+        uint16[] memory failureThresholds
+    ) external onlyOwner {
+        if (finishedDeploymentFlag != State.UNINITIALIZED) revert MustBeZero();
+        _setKeeperReward(_keeperReward);
+        _setPenaltyFee(_penaltyFee);
+        _setMaxTimelockPeriod(_maxTimelockPeriod);
+        _setMaxExpirationPeriod(_maxExpirationPeriod);
+        _setGlobalTierInfo(requiredDonationAmounts, failureThresholds);
+        finishedDeploymentFlag = State.SUCCESS;
+        emit ConstructionFinished(msg.sender);
     }
 
     function toggleFreePlayStatus() external {
@@ -203,14 +232,14 @@ contract ERC20FreePlay is ERC20, ERC20Burnable, Ownable2Step, EnumsEventsErrors,
     }
 
     function setTimelock(uint64 _timeLockPeriod) external {
-        if (_timeLockPeriod > 3650 days) revert InvalidTimePeriod();
+        if (_timeLockPeriod > maxTimelockPeriod) revert InvalidTimePeriod();
         UserInfo storage info = userInfo[msg.sender];
         info.timeLockPeriod = _timeLockPeriod;
         emit TimeLockSet(msg.sender, info.timeLockPeriod);
     }
 
     function setExpiration(uint64 _expirationPeriod) external {
-        if (_expirationPeriod > 3650 days) revert InvalidTimePeriod();
+        if (_expirationPeriod > maxExpirationPeriod) revert InvalidTimePeriod();
         UserInfo storage info = userInfo[msg.sender];
         info.expirationPeriod = _expirationPeriod;
         emit ExpirationSet(msg.sender, info.expirationPeriod);
@@ -356,33 +385,65 @@ contract ERC20FreePlay is ERC20, ERC20Burnable, Ownable2Step, EnumsEventsErrors,
         emit FreePlayPositionCreated(position.owner, _positionId, position.credits, position.claimTier, position.unlocksAt, position.expiresAt);
     }
 
-    function setKeeperReward(uint256 _keeperReward) external onlyOwner {
-        if (_keeperReward >= PCT_DENOMINATOR) revert InvalidFee();
+    function _setKeeperReward(uint256 _keeperReward) internal onlyOwner {
+        if (keeperReward != 0) revert MustBeZero();
+        if (_keeperReward >= PCT_DENOMINATOR) revert InvalidKeeperReward();
         keeperReward = _keeperReward;
-        emit KeeperRewardChanged(_keeperReward);
+        emit KeeperRewardSet(_keeperReward);
     }
 
-    function setPenaltyFee(uint256 _penaltyFee) external onlyOwner {
+    function _setPenaltyFee(uint256 _penaltyFee) internal onlyOwner {
+        if (penaltyFee != 0) revert MustBeZero();
         if (_penaltyFee > PCT_DENOMINATOR) revert InvalidFee();
         penaltyFee = _penaltyFee;
-        emit PenaltyFeeChanged(_penaltyFee);
+        emit PenaltyFeeSet(_penaltyFee);
     }
 
-    function setCallbackGasLimit(uint32 _callbackGasLimit) external onlyOwner {
-        if (_callbackGasLimit > 2_500_000) revert InvalidGasLimit();
+    function _setMaxTimelockPeriod(uint64 _maxTimelockPeriod) internal onlyOwner {
+        if (maxTimelockPeriod != 0) revert MustBeZero();
+        maxTimelockPeriod = _maxTimelockPeriod;
+        emit MaxTimeLockPeriodSet(_maxTimelockPeriod);
+    }
+
+    function _setMaxExpirationPeriod(uint64 _maxExpirationPeriod) internal onlyOwner {
+        if (maxExpirationPeriod != 0) revert MustBeZero();
+        maxExpirationPeriod = _maxExpirationPeriod;
+        emit MaxExpirationPeriodSet(_maxExpirationPeriod);
+    }  
+
+    function _setGlobalTierInfo(uint256[] memory requiredDonationAmounts, uint16[] memory failureThresholds) internal onlyOwner {
+        if (requiredDonationAmounts.length != failureThresholds.length) revert LengthProblem();
+        if (requiredDonationAmounts.length != 6) revert LengthProblem();
+        globalTierInfo[Tier.ONE] = GlobalTierInfo(requiredDonationAmounts[0], failureThresholds[0]);
+        globalTierInfo[Tier.TWO] = GlobalTierInfo(requiredDonationAmounts[1], failureThresholds[1]);
+        globalTierInfo[Tier.THREE] = GlobalTierInfo(requiredDonationAmounts[2], failureThresholds[2]);
+        globalTierInfo[Tier.FOUR] = GlobalTierInfo(requiredDonationAmounts[3], failureThresholds[3]);
+        globalTierInfo[Tier.FIVE] = GlobalTierInfo(requiredDonationAmounts[4], failureThresholds[4]);
+        globalTierInfo[Tier.SIX] = GlobalTierInfo(requiredDonationAmounts[5], failureThresholds[5]);
+        emit GlobalTierInfoSet(msg.sender);
+    } 
+
+    function setSubscriptionId(uint64 _subscriptionId) public onlyOwner {
+        subscriptionId = _subscriptionId;
+        emit SubscriptionIdChanged(_subscriptionId);
+    }
+
+    function setKeyHash(bytes32 _keyHash) public onlyOwner {
+        if (_keyHash == bytes32(0)) revert ZeroKeyHash();
+        keyHash = _keyHash;
+        emit KeyHashSet(_keyHash);
+    }
+
+    function setCallbackGasLimit(uint32 _callbackGasLimit) public onlyOwner {
+        if (_callbackGasLimit > 2_500_000 || _callbackGasLimit < 40000) revert InvalidGasLimit();
         callbackGasLimit = _callbackGasLimit;
         emit CallbackGasLimitChanged(_callbackGasLimit);
     }
 
-    function setRequestConfirmations(uint16 _requestConfirmations) external onlyOwner {
+    function setRequestConfirmations(uint16 _requestConfirmations) public onlyOwner {
         if (_requestConfirmations < 3 || _requestConfirmations > 200) revert InvalidRequestConfirmations();
         requestConfirmations = _requestConfirmations;
         emit RequestConfirmationsChanged(_requestConfirmations);
-    }
-
-    function setSubscriptionId(uint64 _subscriptionId) external onlyOwner {
-        subscriptionId = _subscriptionId;
-        emit SubscriptionIdChanged(_subscriptionId);
     }
 
     function _setEscrow(address _escrow) internal {
@@ -463,7 +524,7 @@ contract ERC20FreePlay is ERC20, ERC20Burnable, Ownable2Step, EnumsEventsErrors,
         );
     }
 
-    // Proof of concept to show that minting works flawlessly with this
+    // Proof of concept to show that minting works flawlessly.
     // @audit should go in the implementation and not the abstract contract probably
     // Should probably be `onlyMinter` from wizard.openzeppelin.com (Mintable, Roles) checked.
     // and MINTER_ROLE should be the Exchange. (And maybe the owner to mock the staking yield contract).

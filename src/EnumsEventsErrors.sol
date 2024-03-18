@@ -6,6 +6,7 @@ abstract contract EnumsEventsErrors {
     enum Tier {ONE, TWO, THREE, FOUR, FIVE, SIX}
     enum State {UNINITIALIZED, OFF, ON, CLAIM_IN_PROGRESS, SUCCESS, FAILURE}
 
+    event ConstructionFinished(address indexed owner);
     event ToggledFreePlayStatus(address indexed user, State indexed oldStatus, State indexed newStatus);
     event ClaimRequestInitiated(address indexed user, uint256 indexed _positionId, uint256 indexed requestId);
     event WordRetrieved(uint256 indexed positionId, uint256 indexed requestId, uint16 indexed randomWord);
@@ -18,13 +19,17 @@ abstract contract EnumsEventsErrors {
     event PositionFixed(address indexed owner, uint256 indexed id);
     event CleanedUpExpiredPosition(uint256 indexed id, address indexed owner, uint256 indexed amount, address caller);
     event FreePlayPositionCreated(address indexed owner, uint256 indexed id, uint256 indexed amount, Tier claimTier, uint64 unlocksAt, uint64 expiresAt);
-    event KeeperRewardChanged(uint256 indexed newKeeperReward);
-    event PenaltyFeeChanged(uint256 indexed newPenaltyFee);
+    event KeeperRewardSet(uint256 indexed keeperReward);
+    event PenaltyFeeSet(uint256 indexed penaltyFee);
+    event MaxTimeLockPeriodSet(uint64 indexed maxTimelockPeriod);
+    event MaxExpirationPeriodSet(uint64 indexed maxExpirationPeriod);
+    event GlobalTierInfoSet(address indexed owner);
     event CallbackGasLimitChanged(uint32 indexed newCallbackGasLimit);
     event RequestConfirmationsChanged(uint16 indexed newRequestConfirmations);
     event SubscriptionIdChanged(uint64 indexed newSubscriptionId);
     event EscrowSet(address indexed newEscrowAddress);
     event LootSet(address indexed newLootAddress);
+    event KeyHashSet(bytes32 indexed keyHash);
     event AddressSet(address indexed _address);
     event LootWithdrawal(uint256 indexed amount, address indexed to);
 
@@ -38,10 +43,14 @@ abstract contract EnumsEventsErrors {
     error InvalidCustomFailureThreshold();
     error PositionAlreadyMatured(uint64 unlocksAt, uint256 currentTime);
     error PositionNotExpired(uint64 expiredAt, uint256 currentTime);
+    error InvalidKeeperReward();
     error InvalidFee();
     error InvalidGasLimit();
     error InvalidRequestConfirmations();
+    error LengthProblem();
     error AddressAlreadySet(address _address);
     error NotFreePlayToken(address caller);
     error ZeroAddress();
+    error ZeroKeyHash();
+    error MustBeZero();
 }
