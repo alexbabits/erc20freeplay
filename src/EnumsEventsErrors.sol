@@ -27,8 +27,9 @@ abstract contract EnumsEventsErrors {
     event CallbackGasLimitChanged(uint32 indexed newCallbackGasLimit);
     event RequestConfirmationsChanged(uint16 indexed newRequestConfirmations);
     event SubscriptionIdChanged(uint64 indexed newSubscriptionId);
-    event EscrowSet(address indexed newEscrowAddress);
-    event LootSet(address indexed newLootAddress);
+    event EscrowSet(address indexed escrowAddress);
+    event LootSet(address indexed lootAddress);
+    event TransmuterSet(address indexed transmuterAddress);
     event KeyHashSet(bytes32 indexed keyHash);
     event AddressSet(address indexed _address);
     event LootWithdrawal(uint256 indexed amount, address indexed to);
@@ -49,7 +50,7 @@ abstract contract EnumsEventsErrors {
     error InvalidRequestConfirmations();
     error LengthProblem();
     error AddressAlreadySet(address _address);
-    error NotFreePlayToken(address caller);
+    error NotWhitelistedCaller(address caller);
     error ZeroAddress();
     error ZeroKeyHash();
     error MustBeZero();

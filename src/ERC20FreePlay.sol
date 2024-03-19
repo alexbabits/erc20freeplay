@@ -12,7 +12,7 @@ import {EnumsEventsErrors} from "./EnumsEventsErrors.sol";
 import {VRFCoordinatorV2Interface} from "@chainlink/src/v0.8/vrf/interfaces/VRFCoordinatorV2Interface.sol";
 import {VRFConsumerBaseV2} from "@chainlink/src/v0.8/vrf/VRFConsumerBaseV2.sol";
 
-contract ERC20FreePlay is ERC20, ERC20Burnable, Ownable2Step, EnumsEventsErrors, VRFConsumerBaseV2 {
+abstract contract ERC20FreePlay is ERC20, ERC20Burnable, Ownable2Step, EnumsEventsErrors, VRFConsumerBaseV2 {
     using SafeERC20 for IERC20;
 
     VRFCoordinatorV2Interface COORDINATOR; // VRF interface
@@ -23,6 +23,7 @@ contract ERC20FreePlay is ERC20, ERC20Burnable, Ownable2Step, EnumsEventsErrors,
 
     address public escrow; // Escrow contract address
     address public loot; // Loot contract address
+    address public transmuter; // transmuter contract address
 
     uint256 public positionId; // global position ID counter
     uint256 public keeperReward;
@@ -67,31 +68,6 @@ contract ERC20FreePlay is ERC20, ERC20Burnable, Ownable2Step, EnumsEventsErrors,
     struct GlobalTierInfo {
         uint256 requiredDonationAmount; // Required tokens donated for that tier.
         uint16 failureThreshold; // Chance of survival of underlying tokens during a claim of free play credits.
-    }
-
-    constructor(
-        address owner, 
-        uint256 initialSupply,
-        uint64 _subscriptionId, 
-        bytes32 _keyHash,
-        uint32 _callbackGasLimit,
-        uint16 _requestConfirmations,
-        address _vrfCoordinator, 
-        address _escrow, 
-        address _loot
-    ) 
-        ERC20("testcoin", "COIN")
-        VRFConsumerBaseV2(_vrfCoordinator)
-        Ownable(owner)
-    {
-        setSubscriptionId(_subscriptionId);
-        setKeyHash(_keyHash);
-        setCallbackGasLimit(_callbackGasLimit);
-        setRequestConfirmations(_requestConfirmations);
-        COORDINATOR = VRFCoordinatorV2Interface(_vrfCoordinator);
-        _setEscrow(_escrow);
-        _setLoot(_loot);
-        _mint(owner, initialSupply);
     }
 
     function constructorPartTwo(
@@ -280,8 +256,7 @@ contract ERC20FreePlay is ERC20, ERC20Burnable, Ownable2Step, EnumsEventsErrors,
         if (position.claimStatus != State.CLAIM_IN_PROGRESS || position.randomWord != 0) revert InvalidPositionState();
         if (position.requestedAt + STUCK_POSITION_TIME_THRESHOLD > block.timestamp ) revert InvalidPositionState();
 
-        position.expiresAt = position.expiresAt == type(uint64).max ? position.expiresAt : position.expiresAt + STUCK_POSITION_TIME_THRESHOLD;
-        position.requestId = 0;
+        if (position.expiresAt != type(uint64).max) position.expiresAt += STUCK_POSITION_TIME_THRESHOLD;
         position.claimStatus = State.UNINITIALIZED;
         emit PositionFixed(msg.sender, _positionId);
     }
@@ -458,6 +433,12 @@ contract ERC20FreePlay is ERC20, ERC20Burnable, Ownable2Step, EnumsEventsErrors,
         emit LootSet(_loot);
     }
 
+    function setTransmuterAddress(address _transmuter) external onlyOwner {
+        if (transmuter != address(0)) revert AddressAlreadySet(transmuter);
+        transmuter = _transmuter;
+        emit TransmuterSet(_transmuter);
+    }
+
     function getGlobalTierInfo(Tier tier) external view returns (uint256, uint16) {
         return (globalTierInfo[tier].requiredDonationAmount, globalTierInfo[tier].failureThreshold);
     }
@@ -522,14 +503,5 @@ contract ERC20FreePlay is ERC20, ERC20Burnable, Ownable2Step, EnumsEventsErrors,
             position.claimStatus,
             position.claimTier
         );
-    }
-
-    // Proof of concept to show that minting works flawlessly.
-    // @audit should go in the implementation and not the abstract contract probably
-    // Should probably be `onlyMinter` from wizard.openzeppelin.com (Mintable, Roles) checked.
-    // and MINTER_ROLE should be the Exchange. (And maybe the owner to mock the staking yield contract).
-    // @audit I removed onlyOwner so everyone can mint for now.
-    function mint(address to, uint256 amount) external {
-        _mint(to, amount);
     }
 }

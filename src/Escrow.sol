@@ -8,12 +8,11 @@ import {EnumsEventsErrors} from "./EnumsEventsErrors.sol";
 contract Escrow is Ownable2Step, EnumsEventsErrors {
     using SafeERC20 for IERC20;
     address private freePlayToken;
-    address private loot;
 
     constructor (address owner) Ownable(owner) {}
 
     function transferUnderlyingTokens(address to, uint256 value) external {
-        if (msg.sender != freePlayToken) revert NotFreePlayToken(msg.sender);
+        if (msg.sender != freePlayToken) revert NotWhitelistedCaller(msg.sender);
         IERC20(freePlayToken).safeTransfer(to, value);
     }
 
@@ -22,12 +21,5 @@ contract Escrow is Ownable2Step, EnumsEventsErrors {
         if (_freePlayToken == address(0)) revert ZeroAddress();
         freePlayToken = _freePlayToken;
         emit AddressSet(_freePlayToken);
-    }
-
-    function setLootAddress(address _loot) external onlyOwner {
-        if (loot != address(0)) revert AddressAlreadySet(loot);
-        if (_loot == address(0)) revert ZeroAddress();
-        loot = _loot;
-        emit AddressSet(_loot);
     }
 }

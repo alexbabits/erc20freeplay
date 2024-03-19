@@ -11,13 +11,6 @@ contract Loot is Ownable2Step, EnumsEventsErrors {
 
     constructor (address owner) Ownable(owner) {}
 
-    function setFreePlayTokenAddress(address _freePlayToken) external onlyOwner {
-        if (freePlayToken != address(0)) revert AddressAlreadySet(freePlayToken);
-        if (_freePlayToken == address(0)) revert ZeroAddress();
-        freePlayToken = _freePlayToken;
-        emit AddressSet(_freePlayToken);
-    }
-
     function withdrawSpecificAmount(uint256 amount, address to) external onlyOwner {
         IERC20(freePlayToken).safeTransfer(to, amount);
         emit LootWithdrawal(amount, to);
@@ -27,5 +20,12 @@ contract Loot is Ownable2Step, EnumsEventsErrors {
         uint256 entireBalance = IERC20(freePlayToken).balanceOf(address(this));
         IERC20(freePlayToken).safeTransfer(to, entireBalance);
         emit LootWithdrawal(entireBalance, to);
+    }
+
+    function setFreePlayTokenAddress(address _freePlayToken) external onlyOwner {
+        if (freePlayToken != address(0)) revert AddressAlreadySet(freePlayToken);
+        if (_freePlayToken == address(0)) revert ZeroAddress();
+        freePlayToken = _freePlayToken;
+        emit AddressSet(_freePlayToken);
     }
 }

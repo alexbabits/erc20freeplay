@@ -3,7 +3,8 @@ pragma solidity ^0.8.20;
 
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol"; 
 
-// This mock is needed so we can represent and mint a "normal token" for exchange wrapping/unwrapping into a "fpToken".
+// This represents the "normal token" we need to mint for simulated yield/rewards before it's wrapped into its FP version.
+// Allows us to properly test the transmuter's wrap and unwrap functions for "Wrapper" FP Tokens.
 contract ERC20Mock is ERC20 {
     constructor() ERC20("ERC20Mock", "E20M") {}
 
